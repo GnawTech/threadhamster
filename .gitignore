@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+
+# Configuration & Secrets
+.env
+
+# Database & Local Data
+data/
+*.db
+*.db-journal
+
+# IDEs
+.vscode/
+.idea/
+
+# Testing & Linting
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
