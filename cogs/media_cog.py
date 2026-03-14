@@ -93,6 +93,19 @@ class MediaCog(commands.Cog):
                     )
                     warning_msg_obj = await message.channel.send(warning_msg)
 
+                    # Also send a DM to the user
+                    kw_list_full = ", ".join([f"`{kw}`" for kw in ACCEPTED_KEYWORDS])
+                    dm_grace_msg = (
+                        f"Deinem Beitrag im Kanal **#{message.channel.name}** fehlt eine Inhaltswarnung (CW).\n\n"
+                        f"Bitte bearbeite deinen Beitrag und füge eines der folgenden Schlagworte sowie eine kurze Beschreibung hinzu:\n"
+                        f"**Akzeptierte Schlagworte:** {kw_list_full}\n\n"
+                        f"Du hast bis {timestamp} Zeit. Danach wird der Beitrag automatisch gelöscht."
+                    )
+                    try:
+                        await message.author.send(dm_grace_msg)
+                    except discord.Forbidden:
+                        logger.warning(f"Could not send grace period DM to {message.author} (DMs closed)")
+
                     # Wait 15 minutes
                     await asyncio.sleep(grace_time * 60)
 

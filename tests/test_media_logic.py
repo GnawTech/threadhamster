@@ -110,10 +110,16 @@ async def test_on_message_triggers_grace_period(cog):
     # Check if message was deleted after grace period
     assert message.delete.called
     assert warning_msg.delete.called
-    assert message.author.send.called
-    args, _ = message.author.send.call_args
-    assert "inhaltswarnungen" in args[0]
-    assert "triggerwarning" in args[0]
+    assert message.author.send.call_count == 2
+    
+    # Check first DM (grace period)
+    grace_args, _ = message.author.send.call_args_list[0]
+    assert "fehlt eine Inhaltswarnung" in grace_args[0]
+    
+    # Check second DM (deletion)
+    delete_args, _ = message.author.send.call_args_list[1]
+    assert "wurde gelöscht" in delete_args[0]
+    assert "inhaltswarnungen" in delete_args[0]
 
 @pytest.mark.asyncio
 async def test_setup_channel_command(cog):
