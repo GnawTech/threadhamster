@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import MagicMock
 from utils.media_utils import is_media, is_spoiler, has_cw_keyword
 
+
 def test_is_media():
     msg = MagicMock()
     msg.attachments = []
@@ -19,6 +20,7 @@ def test_is_media():
     msg.attachments = [att]
     msg.content = ""
     assert is_media(msg) is True
+
 
 def test_is_spoiler():
     msg = MagicMock()
@@ -38,6 +40,7 @@ def test_is_spoiler():
     att2.is_spoiler.return_value = False
     msg.attachments = [att, att2]
     assert is_spoiler(msg) is False
+
 
 def test_has_cw_keyword():
     assert has_cw_keyword("No keyword here") is False
