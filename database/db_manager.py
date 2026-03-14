@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from datetime import datetime
 
 import aiosqlite
 
@@ -59,6 +60,22 @@ class DBManager:
                     task_type TEXT,
                     payload TEXT, -- JSON string
                     status TEXT DEFAULT 'PENDING',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+
+            # Media grace periods (for persistent CW checks)
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS media_grace_periods (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER,
+                    channel_id INTEGER,
+                    message_id INTEGER,
+                    author_id INTEGER,
+                    warning_msg_id INTEGER,
+                    expires_at TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """
@@ -206,4 +223,59 @@ class DBManager:
             await db.execute(
                 "UPDATE batch_tasks SET status = ? WHERE id = ?", (status, task_id)
             )
+            await db.commit()
+
+    async def add_grace_period(
+        self,
+        guild_id: int,
+        channel_id: int,
+        message_id: int,
+        author_id: int,
+        warning_msg_id: int,
+        expires_at: datetime,
+    ):
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                """
+                INSERT INTO media_grace_periods (
+                    guild_id, channel_id, message_id, author_id, warning_msg_id, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+                (
+                    guild_id,
+                    channel_id,
+                    message_id,
+                    author_id,
+                    warning_msg_id,
+                    expires_at.isoformat(),
+                ),
+            )
+            await db.commit()
+
+    async def get_expired_grace_periods(self):
+        async with aiosqlite.connect(self.db_path) as db:
+            now = datetime.now().isoformat()
+            async with db.execute(
+                "SELECT id, guild_id, channel_id, message_id, author_id, warning_msg_id, expires_at FROM media_grace_periods WHERE expires_at <= ?",
+                (now,),
+            ) as cursor:
+                rows = await cursor.fetchall()
+                results = []
+                for row in rows:
+                    results.append(
+                        {
+                            "id": row[0],
+                            "guild_id": row[1],
+                            "channel_id": row[2],
+                            "message_id": row[3],
+                            "author_id": row[4],
+                            "warning_msg_id": row[5],
+                            "expires_at": datetime.fromisoformat(row[6]),
+                        }
+                    )
+                return results
+
+    async def remove_grace_period(self, entry_id: int):
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("DELETE FROM media_grace_periods WHERE id = ?", (entry_id,))
             await db.commit()

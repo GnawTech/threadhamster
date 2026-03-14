@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import logging
 from database.db_manager import DBManager
 from utils.media_utils import is_media, get_quoted_content, is_spoiler, has_cw_keyword, ACCEPTED_KEYWORDS
@@ -14,6 +14,86 @@ class MediaCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = DBManager()
+        self.check_grace_periods.start()
+
+    def cog_unload(self):
+        self.check_grace_periods.cancel()
+
+    @tasks.loop(seconds=60)
+    async def check_grace_periods(self):
+        """
+        Background task to process expired grace periods.
+        """
+        try:
+            expired = await self.db.get_expired_grace_periods()
+            for entry in expired:
+                try:
+                    channel = self.bot.get_channel(entry["channel_id"])
+                    if not channel:
+                        # Channel might be inaccessible or bot left guild
+                        await self.db.remove_grace_period(entry["id"])
+                        continue
+
+                    # Attempt to fetch message
+                    try:
+                        message = await channel.fetch_message(entry["message_id"])
+                        if not has_cw_keyword(message.content):
+                            # Still missing CW, delete
+                            await message.delete()
+                            
+                            # Try to delete warning message
+                            try:
+                                warning_msg = await channel.fetch_message(entry["warning_msg_id"])
+                                await warning_msg.delete()
+                            except:
+                                pass
+
+                            # Send final DM notification
+                            user = self.bot.get_user(entry["author_id"])
+                            if user:
+                                kw_list = ", ".join([f"`{kw}`" for kw in ACCEPTED_KEYWORDS])
+                                embed = discord.Embed(
+                                    title="Beitrag gelöscht",
+                                    description=(
+                                        f"Dein Beitrag im Kanal **#{channel.name}** wurde gelöscht, "
+                                        f"da auch nach 15 Minuten kein gültiges Schlagwort ergänzt wurde."
+                                    ),
+                                    color=discord.Color.red()
+                                )
+                                embed.add_field(name="Akzeptierte Schlagworte", value=kw_list, inline=False)
+                                embed.add_field(name="Dein Text", value=get_quoted_content(message) or "_Kein Text_", inline=False)
+                                
+                                try:
+                                    await user.send(embed=embed)
+                                except:
+                                    pass
+                            
+                            logger.info(f"Persistent moderation: Deleted message {entry['message_id']} from author {entry['author_id']}")
+                        else:
+                            # CW added, cleanup warning
+                            try:
+                                warning_msg = await channel.fetch_message(entry["warning_msg_id"])
+                                await warning_msg.delete()
+                            except:
+                                pass
+                    except discord.NotFound:
+                        # Message already deleted by user, cleanup warning
+                        try:
+                            warning_msg = await channel.fetch_message(entry["warning_msg_id"])
+                            await warning_msg.delete()
+                        except:
+                            pass
+                    
+                    # Always remove from DB after processing
+                    await self.db.remove_grace_period(entry["id"])
+                except Exception as e:
+                    logger.error(f"Error processing grace period entry {entry['id']}: {e}")
+        except Exception as e:
+            logger.error(f"Error in check_grace_periods loop: {e}")
+
+    @check_grace_periods.before_loop
+    async def before_check_grace_periods(self):
+        await self.bot.wait_until_ready()
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -40,12 +120,21 @@ class MediaCog(commands.Cog):
                 channel_name = message.channel.name
                 await message.delete()
 
-                dm_msg = (
-                    f"Dein Post im Kanal **#{channel_name}** wurde gelöscht, "
-                    f"da dies ein Thread-Only Medien-Kanal ist. Bitte antworte in den entsprechenden Threads.\n\n"
-                    f"Dein Text:{get_quoted_content(message)}"
+                embed = discord.Embed(
+                    title="Beitrag gelöscht",
+                    description=(
+                        f"Dein Post im Kanal **#{channel_name}** wurde gelöscht, "
+                        f"da dies ein Thread-Only Medien-Kanal ist. Bitte antworte in den entsprechenden Threads."
+                    ),
+                    color=discord.Color.red()
                 )
-                await message.author.send(dm_msg)
+                embed.add_field(name="Dein Text", value=get_quoted_content(message) or "_Kein Text_", inline=False)
+                
+                try:
+                    await message.author.send(embed=embed)
+                except discord.Forbidden:
+                    pass
+                
                 logger.info(
                     f"Deleted non-media post from {message.author} in {channel_name}"
                 )
@@ -61,17 +150,24 @@ class MediaCog(commands.Cog):
                     await message.delete()
 
                     kw_list = ", ".join([f"`{kw}`" for kw in ACCEPTED_KEYWORDS])
-                    dm_msg = (
-                        f"Dein Beitrag im Kanal **#{channel_name}** wurde gelöscht, "
-                        f"da in diesem Kanal alle Bilder/Medien als **Spoiler** markiert sein müssen.\n\n"
-                        f"Zusätzlich muss eine Inhaltswarnung (CW) angegeben werden, in der du kurz beschreibst, was auf dem Bild zu sehen ist.\n"
-                        f"**Akzeptierte Schlagworte:** {kw_list}\n"
-                        f"(Beispiel: `[CW: Beschreibung des Inhalts]` oder bei NSFW-Inhalten z.B. den Namen der Kinks).\n\n"
-                        f"Dein Text:{get_quoted_content(message)}"
+                    embed = discord.Embed(
+                        title="Beitrag gelöscht",
+                        description=(
+                            f"Dein Beitrag im Kanal **#{channel_name}** wurde gelöscht, "
+                            f"da in diesem Kanal alle Bilder/Medien als **Spoiler** markiert sein müssen."
+                        ),
+                        color=discord.Color.red()
                     )
-                    # Note: We can't really re-send the files easily as spoilers via DM without re-uploading,
-                    # but we can at least send the links/text.
-                    await message.author.send(dm_msg)
+                    embed.add_field(name="Anforderung", value="Alle Medien müssen als Spoiler markiert sein und ein CW-Schlagwort enthalten.", inline=False)
+                    embed.add_field(name="Akzeptierte Schlagworte", value=kw_list, inline=False)
+                    embed.add_field(name="Beispiel", value="`[CW: Beschreibung des Inhalts]` oder bei NSFW-Inhalten z.B. den Namen der Kinks", inline=False)
+                    embed.add_field(name="Dein Text", value=get_quoted_content(message) or "_Kein Text_", inline=False)
+                    
+                    try:
+                        await message.author.send(embed=embed)
+                    except discord.Forbidden:
+                        pass
+                    
                     logger.info(f"Deleted non-spoiler media from {message.author} in {channel_name}")
                     return
                 except Exception as e:
@@ -93,50 +189,35 @@ class MediaCog(commands.Cog):
                     )
                     warning_msg_obj = await message.channel.send(warning_msg)
 
-                    # Also send a DM to the user
+                    # Also send a DM to the user as Embed
                     kw_list_full = ", ".join([f"`{kw}`" for kw in ACCEPTED_KEYWORDS])
-                    dm_grace_msg = (
-                        f"Deinem Beitrag im Kanal **#{message.channel.name}** fehlt eine Inhaltswarnung (CW).\n\n"
-                        f"Bitte bearbeite deinen Beitrag und füge eines der folgenden Schlagworte sowie eine kurze Beschreibung hinzu:\n"
-                        f"**Akzeptierte Schlagworte:** {kw_list_full}\n\n"
-                        f"Du hast bis {timestamp} Zeit. Danach wird der Beitrag automatisch gelöscht."
+                    embed = discord.Embed(
+                        title="Inhaltswarnung (CW) fehlt",
+                        description=(
+                            f"Deinem Beitrag im Kanal **#{message.channel.name}** fehlt eine Inhaltswarnung (CW).\n\n"
+                            f"Bitte bearbeite deinen Beitrag und füge eines der akzeptierten Schlagworte sowie eine kurze Beschreibung hinzu."
+                        ),
+                        color=discord.Color.orange()
                     )
+                    embed.add_field(name="Akzeptierte Schlagworte", value=kw_list_full, inline=False)
+                    embed.add_field(name="Frist", value=f"Bis {timestamp}", inline=False)
+                    
                     try:
-                        await message.author.send(dm_grace_msg)
+                        await message.author.send(embed=embed)
                     except discord.Forbidden:
                         logger.warning(f"Could not send grace period DM to {message.author} (DMs closed)")
 
-                    # Wait 15 minutes
-                    await asyncio.sleep(grace_time * 60)
-
-                    # Re-fetch message to check for edits
-                    try:
-                        refetched_msg = await message.channel.fetch_message(message.id)
-                        if not has_cw_keyword(refetched_msg.content):
-                            # Still no keyword, delete
-                            await refetched_msg.delete()
-                            await warning_msg_obj.delete()
-
-                            kw_list = ", ".join([f"`{kw}`" for kw in ACCEPTED_KEYWORDS])
-                            dm_msg = (
-                                f"Dein Beitrag im Kanal **#{message.channel.name}** wurde gelöscht, "
-                                f"da auch nach 15 Minuten kein gültiges Schlagwort mit einer kurzen Inhaltsbeschreibung ergänzt wurde.\n\n"
-                                f"**Akzeptierte Schlagworte:** {kw_list}\n"
-                                f"Dein Text:{get_quoted_content(message)}"
-                            )
-                            await message.author.send(dm_msg)
-                            logger.info(f"Deleted media after grace period from {message.author}")
-                        else:
-                            # Keyword added, delete warning message
-                            await warning_msg_obj.delete()
-                    except discord.NotFound:
-                        # Message was already deleted by user
-                        try:
-                            await warning_msg_obj.delete()
-                        except:
-                            pass
+                    # Save to DB for persistence
+                    await self.db.add_grace_period(
+                        guild_id,
+                        message.channel.id,
+                        message.id,
+                        message.author.id,
+                        warning_msg_obj.id,
+                        target_time
+                    )
                 except Exception as e:
-                    logger.error(f"Error in CW grace period: {e}")
+                    logger.error(f"Error in CW grace period initialization: {e}")
 
         # 3. Auto-Thread
         if auto_thread:

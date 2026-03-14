@@ -20,9 +20,10 @@ def mock_bot():
 
 @pytest.fixture
 def cog(mock_bot):
-    cog = MediaCog(mock_bot)
-    cog.db = AsyncMock(spec=DBManager)
-    return cog
+    with patch("discord.ext.tasks.Loop.start"):
+        cog = MediaCog(mock_bot)
+        cog.db = AsyncMock(spec=DBManager)
+        return cog
 
 @pytest.mark.asyncio
 async def test_on_message_deletes_non_spoiler_media(cog):
@@ -48,11 +49,11 @@ async def test_on_message_deletes_non_spoiler_media(cog):
     
     assert message.delete.called
     assert message.author.send.called
-    args, _ = message.author.send.call_args
-    assert "Spoiler" in args[0]
-    assert "Inhaltswarnung (CW)" in args[0]
-    assert "inhaltswarnungen" in args[0] # One of the keywords
-    assert "triggerwarning" in args[0] # Another one
+    kw_args, kw_kwargs = message.author.send.call_args
+    embed = kw_kwargs.get("embed")
+    assert embed is not None
+    assert "Beitrag gelöscht" in embed.title
+    assert "inhaltswarnungen" in embed.fields[1].value.lower()
 
 @pytest.mark.asyncio
 async def test_on_message_allows_spoiler_with_cw(cog):
@@ -101,25 +102,26 @@ async def test_on_message_triggers_grace_period(cog):
     att.content_type = "image/png"
     message.attachments = [att]
     
-    # Patch asyncio.sleep to not actually wait
+    # Patch asyncio.sleep just in case, though it's not used in on_message anymore
     with patch("asyncio.sleep", AsyncMock()):
         await cog.on_message(message)
     
     # Check if channel warning was sent
     assert message.channel.send.called
-    # Check if message was deleted after grace period
-    assert message.delete.called
-    assert warning_msg.delete.called
-    assert message.author.send.call_count == 2
     
-    # Check first DM (grace period)
-    grace_args, _ = message.author.send.call_args_list[0]
-    assert "fehlt eine Inhaltswarnung" in grace_args[0]
+    # Check if DM was sent as Embed
+    assert message.author.send.called
+    _, kw_kwargs = message.author.send.call_args
+    embed = kw_kwargs.get("embed")
+    assert embed is not None
+    assert "Inhaltswarnung (CW) fehlt" in embed.title
     
-    # Check second DM (deletion)
-    delete_args, _ = message.author.send.call_args_list[1]
-    assert "wurde gelöscht" in delete_args[0]
-    assert "inhaltswarnungen" in delete_args[0]
+    # Check if added to DB for persistence
+    assert cog.db.add_grace_period.called
+    args, _ = cog.db.add_grace_period.call_args
+    assert args[0] == 111 # guild_id
+    assert args[1] == 222 # channel_id
+    assert args[2] == 999 # message_id
 
 @pytest.mark.asyncio
 async def test_setup_channel_command(cog):
