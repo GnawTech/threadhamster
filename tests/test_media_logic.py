@@ -51,6 +51,8 @@ async def test_on_message_deletes_non_spoiler_media(cog):
     args, _ = message.author.send.call_args
     assert "Spoiler" in args[0]
     assert "Inhaltswarnung (CW)" in args[0]
+    assert "inhaltswarnungen" in args[0] # One of the keywords
+    assert "triggerwarning" in args[0] # Another one
 
 @pytest.mark.asyncio
 async def test_on_message_allows_spoiler_with_cw(cog):
@@ -110,7 +112,8 @@ async def test_on_message_triggers_grace_period(cog):
     assert warning_msg.delete.called
     assert message.author.send.called
     args, _ = message.author.send.call_args
-    assert "kein gültiges Schlagwort (CW)" in args[0]
+    assert "inhaltswarnungen" in args[0]
+    assert "triggerwarning" in args[0]
 
 @pytest.mark.asyncio
 async def test_setup_channel_command(cog):

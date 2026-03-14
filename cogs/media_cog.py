@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 import logging
 from database.db_manager import DBManager
-from utils.media_utils import is_media, get_quoted_content, is_spoiler, has_cw_keyword
+from utils.media_utils import is_media, get_quoted_content, is_spoiler, has_cw_keyword, ACCEPTED_KEYWORDS
 from discord import app_commands
 import asyncio
 from datetime import datetime, timedelta
@@ -60,11 +60,13 @@ class MediaCog(commands.Cog):
                     channel_name = message.channel.name
                     await message.delete()
 
+                    kw_list = ", ".join([f"`{kw}`" for kw in ACCEPTED_KEYWORDS])
                     dm_msg = (
                         f"Dein Beitrag im Kanal **#{channel_name}** wurde gelöscht, "
                         f"da in diesem Kanal alle Bilder/Medien als **Spoiler** markiert sein müssen.\n\n"
-                        f"Zusätzlich muss eine Inhaltswarnung (CW) angegeben werden, in der du kurz beschreibst, was auf dem Bild zu sehen ist "
-                        f"(z.B. `[Contentwarning: Beschreibung des Inhalts]` oder bei NSFW-Inhalten z.B. den Namen der Kinks).\n\n"
+                        f"Zusätzlich muss eine Inhaltswarnung (CW) angegeben werden, in der du kurz beschreibst, was auf dem Bild zu sehen ist.\n"
+                        f"**Akzeptierte Schlagworte:** {kw_list}\n"
+                        f"(Beispiel: `[CW: Beschreibung des Inhalts]` oder bei NSFW-Inhalten z.B. den Namen der Kinks).\n\n"
                         f"Dein Text:{get_quoted_content(message)}"
                     )
                     # Note: We can't really re-send the files easily as spoilers via DM without re-uploading,
@@ -82,9 +84,10 @@ class MediaCog(commands.Cog):
                     target_time = datetime.now() + timedelta(minutes=grace_time)
                     timestamp = f"<t:{int(target_time.timestamp())}:t>"
 
+                    kw_list_short = ", ".join([f"`{kw}`" for kw in ["CW", "TW", "IW", "Inhaltswarnung"]])
                     warning_msg = (
                         f"{message.author.mention}, deinem Beitrag fehlt eines der notwendigen Schlagworte "
-                        f"(z.B. `Contentwarning`, `CW`, `Inhaltswarnung`). "
+                        f"(z.B. {kw_list_short} etc.). "
                         f"Bitte füge es nach.\nDu hast dafür bis {timestamp} Zeit. "
                         f"Danach wird der Beitrag gelöscht."
                     )
@@ -101,9 +104,11 @@ class MediaCog(commands.Cog):
                             await refetched_msg.delete()
                             await warning_msg_obj.delete()
 
+                            kw_list = ", ".join([f"`{kw}`" for kw in ACCEPTED_KEYWORDS])
                             dm_msg = (
                                 f"Dein Beitrag im Kanal **#{message.channel.name}** wurde gelöscht, "
-                                f"da auch nach 15 Minuten kein gültiges Schlagwort (CW) mit einer kurzen Inhaltsbeschreibung ergänzt wurde.\n\n"
+                                f"da auch nach 15 Minuten kein gültiges Schlagwort mit einer kurzen Inhaltsbeschreibung ergänzt wurde.\n\n"
+                                f"**Akzeptierte Schlagworte:** {kw_list}\n"
                                 f"Dein Text:{get_quoted_content(message)}"
                             )
                             await message.author.send(dm_msg)

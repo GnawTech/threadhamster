@@ -41,30 +41,32 @@ def is_spoiler(message):
     return all(att.is_spoiler() for att in message.attachments)
 
 
+ACCEPTED_KEYWORDS = [
+    "contentwarning",
+    "contentwarnings",
+    "cw",
+    "cws",
+    "inhaltswarnung",
+    "inhaltswarnungen",
+    "iw",
+    "iws",
+    "triggerwarning",
+    "triggerwarnings",
+    "tw",
+    "tws",
+    "triggerwarnung",
+    "triggerwarnungen",
+]
+
+
 def has_cw_keyword(content):
     """
     Checks if the content contains one of the required CW keywords as a whole word.
     """
-    keywords = [
-        "contentwarning",
-        "contentwarnings",
-        "cw",
-        "cws",
-        "inhaltswarnung",
-        "inhaltswarnungen",
-        "iw",
-        "iws",
-        "triggerwarning",
-        "triggerwarnings",
-        "tw",
-        "tws",
-        "triggerwarnung",
-        "triggerwarnungen",
-    ]
     content_lower = content.lower()
     # Use regex to find keywords as whole words
     # regex pattern: \b(keyword1|keyword2|...)\b
-    pattern = r"\b(" + "|".join(re.escape(kw) for kw in keywords) + r")\b"
+    pattern = r"\b(" + "|".join(re.escape(kw) for kw in ACCEPTED_KEYWORDS) + r")\b"
     return bool(re.search(pattern, content_lower))
 
 
