@@ -1,7 +1,8 @@
-import aiosqlite
-import logging
 import json
+import logging
 import os
+
+import aiosqlite
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,9 @@ class DBManager:
                     target_type TEXT, -- 'THREAD', 'CHANNEL', 'CATEGORY'
                     lifespan INTEGER,
                     auto_thread BOOLEAN DEFAULT 0,
-                    thread_only BOOLEAN DEFAULT 0
+                    thread_only BOOLEAN DEFAULT 0,
+                    spoiler_only BOOLEAN DEFAULT 0,
+                    manually_archived BOOLEAN DEFAULT 0
                 )
             """
             )
@@ -63,6 +66,26 @@ class DBManager:
 
             await db.commit()
             logger.info("Database initialized.")
+
+            # Migration: Add manually_archived column if it doesn't exist (Backup for existing DBs)
+            async with db.execute("PRAGMA table_info(target_settings)") as cursor:
+                columns = [row[1] for row in await cursor.fetchall()]
+                if "manually_archived" not in columns:
+                    await db.execute(
+                        "ALTER TABLE target_settings ADD COLUMN manually_archived BOOLEAN DEFAULT 0"
+                    )
+                    await db.commit()
+                    logger.info("Database migration: Added manually_archived column.")
+
+            # Migration: Add spoiler_only column if it doesn't exist
+            async with db.execute("PRAGMA table_info(target_settings)") as cursor:
+                columns = [row[1] for row in await cursor.fetchall()]
+                if "spoiler_only" not in columns:
+                    await db.execute(
+                        "ALTER TABLE target_settings ADD COLUMN spoiler_only BOOLEAN DEFAULT 0"
+                    )
+                    await db.commit()
+                    logger.info("Database migration: Added spoiler_only column.")
 
     async def set_guild_setting(
         self, guild_id: int, global_lifespan: int = None, monitor_mode: str = None
@@ -101,15 +124,22 @@ class DBManager:
         lifespan: int = None,
         auto_thread: bool = None,
         thread_only: bool = None,
+        spoiler_only: bool = None,
+        manually_archived: bool = None,
     ):
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 """
-                INSERT OR REPLACE INTO target_settings (guild_id, target_id, target_type, lifespan, auto_thread, thread_only)
+                INSERT OR REPLACE INTO target_settings (
+                    guild_id, target_id, target_type, lifespan, 
+                    auto_thread, thread_only, manually_archived
+                )
                 VALUES (?, ?, ?, 
                     COALESCE(?, (SELECT lifespan FROM target_settings WHERE target_id = ?)),
-                    COALESCE(?, (SELECT auto_thread FROM target_settings WHERE target_id = ?)),
-                    COALESCE(?, (SELECT thread_only FROM target_settings WHERE target_id = ?))
+                    COALESCE(?, (SELECT auto_thread FROM target_settings WHERE target_id = ?), 0),
+                    COALESCE(?, (SELECT thread_only FROM target_settings WHERE target_id = ?), 0),
+                    COALESCE(?, (SELECT spoiler_only FROM target_settings WHERE target_id = ?), 0),
+                    COALESCE(?, (SELECT manually_archived FROM target_settings WHERE target_id = ?), 0)
                 )
             """,
                 (
@@ -122,6 +152,10 @@ class DBManager:
                     target_id,
                     thread_only,
                     target_id,
+                    spoiler_only,
+                    target_id,
+                    manually_archived,
+                    target_id,
                 ),
             )
             await db.commit()
@@ -129,15 +163,40 @@ class DBManager:
     async def get_target_setting(self, target_id: int):
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
-                "SELECT guild_id, target_type, lifespan, auto_thread, thread_only FROM target_settings WHERE target_id = ?",
+                "SELECT guild_id, target_type, lifespan, auto_thread, thread_only, spoiler_only, manually_archived FROM target_settings WHERE target_id = ?",
                 (target_id,),
             ) as cursor:
                 return await cursor.fetchone()
 
     async def add_batch_task(self, guild_id: int, task_type: str, payload: dict):
         async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
+            async with db.execute(
                 "INSERT INTO batch_tasks (guild_id, task_type, payload) VALUES (?, ?, ?)",
                 (guild_id, task_type, json.dumps(payload)),
+            ) as cursor:
+                await db.commit()
+                return cursor.lastrowid
+
+    async def get_pending_batch_tasks(self):
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT id, guild_id, task_type, payload FROM batch_tasks WHERE status = 'PENDING' ORDER BY created_at ASC"
+            ) as cursor:
+                tasks = []
+                for row in await cursor.fetchall():
+                    tasks.append(
+                        {
+                            "id": row[0],
+                            "guild_id": row[1],
+                            "type": row[2],
+                            "payload": json.loads(row[3]),
+                        }
+                    )
+                return tasks
+
+    async def update_batch_task_status(self, task_id: int, status: str):
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "UPDATE batch_tasks SET status = ? WHERE id = ?", (status, task_id)
             )
             await db.commit()
