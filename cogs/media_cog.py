@@ -199,6 +199,7 @@ class MediaCog(commands.Cog):
                         color=discord.Color.orange()
                     )
                     embed.add_field(name="Akzeptierte Schlagworte", value=kw_list_full, inline=False)
+                    embed.add_field(name="Empfohlene Darstellung", value="`[CW: Kurze Inhaltsbeschreibung]`\n`[TW: Trigger-Thema]`\n`CW: Beschreibung`", inline=False)
                     embed.add_field(name="Frist", value=f"Bis {timestamp}", inline=False)
                     
                     try:
