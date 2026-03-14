@@ -28,8 +28,8 @@ class MediaCog(commands.Cog):
         if not res:
             return
 
-        # res: id, guild_id, target_id, target_type, lifespan, auto_thread, thread_only, spoiler_only, manually_archived
-        _, _, _, _, _, auto_thread, thread_only, spoiler_only, _ = res
+        # res: guild_id, target_type, lifespan, auto_thread, thread_only, spoiler_only, manually_archived
+        _, _, _, auto_thread, thread_only, spoiler_only, _ = res
 
         has_media = is_media(message)
 
@@ -228,6 +228,29 @@ class MediaCog(commands.Cog):
             msg += f"- Spoiler-Only (+CW): {'An' if spoiler_only else 'Aus'}\n"
 
         await interaction.followup.send(msg, ephemeral=True)
+
+    @app_commands.command(
+        name="reset_channel",
+        description="Entfernt alle Bot-Einstellungen für einen Kanal (Lifespan + Medien).",
+    )
+    @app_commands.describe(
+        channel="Der Kanal, der zurückgesetzt werden soll (Standard: aktuell)",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def reset_channel(
+        self,
+        interaction: discord.Interaction,
+        channel: discord.TextChannel = None,
+    ):
+        await interaction.response.defer(ephemeral=True)
+        target_channel = channel or interaction.channel
+        
+        await self.db.remove_target_setting(target_channel.id)
+        
+        await interaction.followup.send(
+            f"Alle Einstellungen für {target_channel.mention} wurden gelöscht. Der Kanal ist nun wieder 'normal'.",
+            ephemeral=True
+        )
 
 
 async def setup(bot):

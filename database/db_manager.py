@@ -132,7 +132,7 @@ class DBManager:
                 """
                 INSERT OR REPLACE INTO target_settings (
                     guild_id, target_id, target_type, lifespan, 
-                    auto_thread, thread_only, manually_archived
+                    auto_thread, thread_only, spoiler_only, manually_archived
                 )
                 VALUES (?, ?, ?, 
                     COALESCE(?, (SELECT lifespan FROM target_settings WHERE target_id = ?)),
@@ -167,6 +167,13 @@ class DBManager:
                 (target_id,),
             ) as cursor:
                 return await cursor.fetchone()
+
+    async def remove_target_setting(self, target_id: int):
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "DELETE FROM target_settings WHERE target_id = ?", (target_id,)
+            )
+            await db.commit()
 
     async def add_batch_task(self, guild_id: int, task_type: str, payload: dict):
         async with aiosqlite.connect(self.db_path) as db:

@@ -27,8 +27,8 @@ def cog(mock_bot):
 @pytest.mark.asyncio
 async def test_on_message_deletes_non_spoiler_media(cog):
     # Setup: spoiler_only is True
-    # res: id, guild_id, target_id, target_type, lifespan, auto_thread, thread_only, spoiler_only, manually_archived
-    cog.db.get_target_setting.return_value = (1, 111, 222, "CHANNEL", 0, False, False, True, False)
+    # res: guild_id, target_type, lifespan, auto_thread, thread_only, spoiler_only, manually_archived
+    cog.db.get_target_setting.return_value = (111, "CHANNEL", 0, False, False, True, False)
     
     # Mock message with non-spoiler image
     message = AsyncMock(spec=discord.Message)
@@ -54,7 +54,7 @@ async def test_on_message_deletes_non_spoiler_media(cog):
 
 @pytest.mark.asyncio
 async def test_on_message_allows_spoiler_with_cw(cog):
-    cog.db.get_target_setting.return_value = (1, 111, 222, "CHANNEL", 0, False, False, True, False)
+    cog.db.get_target_setting.return_value = (111, "CHANNEL", 0, False, False, True, False)
     
     # Mock message with spoiler and CW
     message = AsyncMock(spec=discord.Message)
@@ -76,7 +76,7 @@ async def test_on_message_allows_spoiler_with_cw(cog):
 
 @pytest.mark.asyncio
 async def test_on_message_triggers_grace_period(cog):
-    cog.db.get_target_setting.return_value = (1, 111, 222, "CHANNEL", 0, False, False, True, False)
+    cog.db.get_target_setting.return_value = (111, "CHANNEL", 0, False, False, True, False)
     
     # Mock message with spoiler but NO CW
     message = AsyncMock(spec=discord.Message)
