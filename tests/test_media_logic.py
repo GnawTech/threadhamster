@@ -106,8 +106,8 @@ async def test_on_message_triggers_grace_period(cog):
     with patch("asyncio.sleep", AsyncMock()):
         await cog.on_message(message)
     
-    # Check if channel warning was sent
-    assert message.channel.send.called
+    # Check that NO channel warning was sent
+    assert not message.channel.send.called
     
     # Check if DM was sent as Embed
     assert message.author.send.called

@@ -41,12 +41,13 @@ class MediaCog(commands.Cog):
                             # Still missing CW, delete
                             await message.delete()
                             
-                            # Try to delete warning message
-                            try:
-                                warning_msg = await channel.fetch_message(entry["warning_msg_id"])
-                                await warning_msg.delete()
-                            except:
-                                pass
+                            # Try to delete warning message if it exists
+                            if entry.get("warning_msg_id") and entry["warning_msg_id"] > 0:
+                                try:
+                                    warning_msg = await channel.fetch_message(entry["warning_msg_id"])
+                                    await warning_msg.delete()
+                                except:
+                                    pass
 
                             # Send final DM notification
                             user = self.bot.get_user(entry["author_id"])
@@ -70,19 +71,21 @@ class MediaCog(commands.Cog):
                             
                             logger.info(f"Persistent moderation: Deleted message {entry['message_id']} from author {entry['author_id']}")
                         else:
-                            # CW added, cleanup warning
+                            # CW added, cleanup warning if it exists
+                            if entry.get("warning_msg_id") and entry["warning_msg_id"] > 0:
+                                try:
+                                    warning_msg = await channel.fetch_message(entry["warning_msg_id"])
+                                    await warning_msg.delete()
+                                except:
+                                    pass
+                    except discord.NotFound:
+                        # Message already deleted by user, cleanup warning if it exists
+                        if entry.get("warning_msg_id") and entry["warning_msg_id"] > 0:
                             try:
                                 warning_msg = await channel.fetch_message(entry["warning_msg_id"])
                                 await warning_msg.delete()
                             except:
                                 pass
-                    except discord.NotFound:
-                        # Message already deleted by user, cleanup warning
-                        try:
-                            warning_msg = await channel.fetch_message(entry["warning_msg_id"])
-                            await warning_msg.delete()
-                        except:
-                            pass
                     
                     # Always remove from DB after processing
                     await self.db.remove_grace_period(entry["id"])
@@ -180,14 +183,9 @@ class MediaCog(commands.Cog):
                     target_time = datetime.now() + timedelta(minutes=grace_time)
                     timestamp = f"<t:{int(target_time.timestamp())}:t>"
 
-                    kw_list_short = ", ".join([f"`{kw}`" for kw in ["CW", "TW", "IW", "Inhaltswarnung"]])
-                    warning_msg = (
-                        f"{message.author.mention}, deinem Beitrag fehlt eines der notwendigen Schlagworte "
-                        f"(z.B. {kw_list_short} etc.). "
-                        f"Bitte füge es nach.\nDu hast dafür bis {timestamp} Zeit. "
-                        f"Danach wird der Beitrag gelöscht."
-                    )
-                    warning_msg_obj = await message.channel.send(warning_msg)
+                    # we NO LONGER send a public warning in the channel.
+                    # warning_msg = (...)
+                    # warning_msg_obj = await message.channel.send(warning_msg)
 
                     # Also send a DM to the user as Embed
                     kw_list_full = ", ".join([f"`{kw}`" for kw in ACCEPTED_KEYWORDS])
@@ -195,7 +193,8 @@ class MediaCog(commands.Cog):
                         title="Inhaltswarnung (CW) fehlt",
                         description=(
                             f"Deinem Beitrag im Kanal **#{message.channel.name}** fehlt eine Inhaltswarnung (CW).\n\n"
-                            f"Bitte bearbeite deinen Beitrag und füge eines der akzeptierten Schlagworte sowie eine kurze Beschreibung hinzu."
+                            f"Bitte bearbeite deinen Beitrag innerhalb der nächsten 15 Minuten und füge eines der akzeptierten Schlagworte sowie eine kurze Beschreibung hinzu.\n"
+                            f"Ansonsten muss der Beitrag leider automatisch gelöscht werden."
                         ),
                         color=discord.Color.orange()
                     )
@@ -207,13 +206,13 @@ class MediaCog(commands.Cog):
                     except discord.Forbidden:
                         logger.warning(f"Could not send grace period DM to {message.author} (DMs closed)")
 
-                    # Save to DB for persistence
+                    # Save to DB for persistence (warning_msg_id is now 0)
                     await self.db.add_grace_period(
                         guild_id,
                         message.channel.id,
                         message.id,
                         message.author.id,
-                        warning_msg_obj.id,
+                        0,
                         target_time
                     )
                 except Exception as e:
