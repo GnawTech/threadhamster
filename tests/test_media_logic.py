@@ -1,10 +1,9 @@
-import sys
 import os
-import pytest
-import discord
-import asyncio
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timedelta
+
+import discord
+import pytest
 
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -198,3 +197,64 @@ async def test_edit_channel_command(cog):
     args, _ = interaction.followup.send.call_args
     assert "Spoiler-Only (+CW): An" in args[0]
     assert "Auto-Thread" not in args[0]  # Should only show what changed
+
+
+@pytest.mark.asyncio
+async def test_on_message_ignores_thread_only_in_threads(cog):
+    # Setup: thread_only is True
+    cog.db.get_target_setting.return_value = (
+        111,
+        "THREAD",
+        0,
+        False,
+        True,  # thread_only
+        False,
+        False,
+    )
+
+    # Mock message in a thread
+    mock_thread = MagicMock(spec=discord.Thread)
+    mock_thread.id = 222
+    mock_thread.name = "my-thread"
+
+    message = AsyncMock(spec=discord.Message)
+    message.guild.id = 111
+    message.channel = mock_thread
+    message.author.bot = False
+    message.content = "Just text in a thread"
+    message.attachments = []
+
+    await cog.on_message(message)
+
+    # Should NOT be deleted because it's in a thread
+    assert not message.delete.called
+    assert not message.author.send.called
+
+
+@pytest.mark.asyncio
+async def test_on_message_ignores_system_messages(cog):
+    # Setup: thread_only is True
+    cog.db.get_target_setting.return_value = (
+        111,
+        "CHANNEL",
+        0,
+        False,
+        True,  # thread_only
+        False,
+        False,
+    )
+
+    # Mock system message (e.g. thread_created)
+    message = AsyncMock(spec=discord.Message)
+    message.guild.id = 111
+    message.channel.id = 222
+    message.author.bot = False
+    message.type = discord.MessageType.thread_created
+    message.content = "X started a thread"
+    message.attachments = []
+
+    await cog.on_message(message)
+
+    # Should NOT be moderated because it's a system message
+    assert not message.delete.called
+    assert not message.author.send.called

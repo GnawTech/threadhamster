@@ -2,7 +2,13 @@ import discord
 from discord.ext import commands, tasks
 import logging
 from database.db_manager import DBManager
-from utils.media_utils import is_media, get_quoted_content, is_spoiler, has_cw_keyword, ACCEPTED_KEYWORDS
+from utils.media_utils import (
+    is_media,
+    get_quoted_content,
+    is_spoiler,
+    has_cw_keyword,
+    ACCEPTED_KEYWORDS,
+)
 from discord import app_commands
 import asyncio
 from datetime import datetime, timedelta
@@ -40,11 +46,16 @@ class MediaCog(commands.Cog):
                         if not has_cw_keyword(message.content):
                             # Still missing CW, delete
                             await message.delete()
-                            
+
                             # Try to delete warning message if it exists
-                            if entry.get("warning_msg_id") and entry["warning_msg_id"] > 0:
+                            if (
+                                entry.get("warning_msg_id")
+                                and entry["warning_msg_id"] > 0
+                            ):
                                 try:
-                                    warning_msg = await channel.fetch_message(entry["warning_msg_id"])
+                                    warning_msg = await channel.fetch_message(
+                                        entry["warning_msg_id"]
+                                    )
                                     await warning_msg.delete()
                                 except:
                                     pass
@@ -52,29 +63,46 @@ class MediaCog(commands.Cog):
                             # Send final DM notification
                             user = self.bot.get_user(entry["author_id"])
                             if user:
-                                kw_list = ", ".join([f"`{kw}`" for kw in ACCEPTED_KEYWORDS])
+                                kw_list = ", ".join(
+                                    [f"`{kw}`" for kw in ACCEPTED_KEYWORDS]
+                                )
                                 embed = discord.Embed(
                                     title="Beitrag gelöscht",
                                     description=(
                                         f"Dein Beitrag im Kanal **#{channel.name}** wurde gelöscht, "
                                         f"da auch nach 15 Minuten kein gültiges Schlagwort ergänzt wurde."
                                     ),
-                                    color=discord.Color.red()
+                                    color=discord.Color.red(),
                                 )
-                                embed.add_field(name="Akzeptierte Schlagworte", value=kw_list, inline=False)
-                                embed.add_field(name="Dein Text", value=get_quoted_content(message) or "_Kein Text_", inline=False)
-                                
+                                embed.add_field(
+                                    name="Akzeptierte Schlagworte",
+                                    value=kw_list,
+                                    inline=False,
+                                )
+                                embed.add_field(
+                                    name="Dein Text",
+                                    value=get_quoted_content(message) or "_Kein Text_",
+                                    inline=False,
+                                )
+
                                 try:
                                     await user.send(embed=embed)
                                 except:
                                     pass
-                            
-                            logger.info(f"Persistent moderation: Deleted message {entry['message_id']} from author {entry['author_id']}")
+
+                            logger.info(
+                                f"Persistent moderation: Deleted message {entry['message_id']} from author {entry['author_id']}"
+                            )
                         else:
                             # CW added, cleanup warning if it exists
-                            if entry.get("warning_msg_id") and entry["warning_msg_id"] > 0:
+                            if (
+                                entry.get("warning_msg_id")
+                                and entry["warning_msg_id"] > 0
+                            ):
                                 try:
-                                    warning_msg = await channel.fetch_message(entry["warning_msg_id"])
+                                    warning_msg = await channel.fetch_message(
+                                        entry["warning_msg_id"]
+                                    )
                                     await warning_msg.delete()
                                 except:
                                     pass
@@ -82,15 +110,19 @@ class MediaCog(commands.Cog):
                         # Message already deleted by user, cleanup warning if it exists
                         if entry.get("warning_msg_id") and entry["warning_msg_id"] > 0:
                             try:
-                                warning_msg = await channel.fetch_message(entry["warning_msg_id"])
+                                warning_msg = await channel.fetch_message(
+                                    entry["warning_msg_id"]
+                                )
                                 await warning_msg.delete()
                             except:
                                 pass
-                    
+
                     # Always remove from DB after processing
                     await self.db.remove_grace_period(entry["id"])
                 except Exception as e:
-                    logger.error(f"Error processing grace period entry {entry['id']}: {e}")
+                    logger.error(
+                        f"Error processing grace period entry {entry['id']}: {e}"
+                    )
         except Exception as e:
             logger.error(f"Error in check_grace_periods loop: {e}")
 
@@ -106,6 +138,11 @@ class MediaCog(commands.Cog):
         guild_id = message.guild.id
         channel_id = message.channel.id
 
+        # Only moderate user messages (default or reply).
+        # This prevents moderating system messages like "X started a thread".
+        if message.type not in (discord.MessageType.default, discord.MessageType.reply):
+            return
+
         # Check settings for this channel
         res = await self.db.get_target_setting(channel_id)
         if not res:
@@ -117,7 +154,12 @@ class MediaCog(commands.Cog):
         has_media = is_media(message)
 
         # 1. Moderation (thread_only)
-        if thread_only and not has_media:
+        # Skip this check if we are already in a thread, because text-only is ALLOWED in threads.
+        if (
+            thread_only
+            and not has_media
+            and not isinstance(message.channel, discord.Thread)
+        ):
             try:
                 # Delete and notify
                 channel_name = message.channel.name
@@ -129,15 +171,19 @@ class MediaCog(commands.Cog):
                         f"Dein Post im Kanal **#{channel_name}** wurde gelöscht, "
                         f"da dies ein Thread-Only Medien-Kanal ist. Bitte antworte in den entsprechenden Threads."
                     ),
-                    color=discord.Color.red()
+                    color=discord.Color.red(),
                 )
-                embed.add_field(name="Dein Text", value=get_quoted_content(message) or "_Kein Text_", inline=False)
-                
+                embed.add_field(
+                    name="Dein Text",
+                    value=get_quoted_content(message) or "_Kein Text_",
+                    inline=False,
+                )
+
                 try:
                     await message.author.send(embed=embed)
                 except discord.Forbidden:
                     pass
-                
+
                 logger.info(
                     f"Deleted non-media post from {message.author} in {channel_name}"
                 )
@@ -147,6 +193,11 @@ class MediaCog(commands.Cog):
 
         # 2. Moderation (spoiler_only)
         if spoiler_only and has_media:
+            # Special case for Forum starter messages: Deleting them deletes the whole thread.
+            # We allow them if they are in a thread AND it's a ForumChannel parent.
+            # Actually, standard spoiler_only should still apply, but maybe be more lenient?
+            # For now, we keep it as is, but we could add a check if it's a starter message.
+
             if not is_spoiler(message):
                 try:
                     channel_name = message.channel.name
@@ -159,19 +210,35 @@ class MediaCog(commands.Cog):
                             f"Dein Beitrag im Kanal **#{channel_name}** wurde gelöscht, "
                             f"da in diesem Kanal alle Bilder/Medien als **Spoiler** markiert sein müssen."
                         ),
-                        color=discord.Color.red()
+                        color=discord.Color.red(),
                     )
-                    embed.add_field(name="Anforderung", value="Alle Medien müssen als Spoiler markiert sein und ein CW-Schlagwort enthalten.", inline=False)
-                    embed.add_field(name="Akzeptierte Schlagworte", value=kw_list, inline=False)
-                    embed.add_field(name="Beispiel", value="`[CW: Beschreibung des Inhalts]` oder bei NSFW-Inhalten z.B. den Namen der Kinks", inline=False)
-                    embed.add_field(name="Dein Text", value=get_quoted_content(message) or "_Kein Text_", inline=False)
-                    
+                    embed.add_field(
+                        name="Anforderung",
+                        value="Alle Medien müssen als Spoiler markiert sein und ein CW-Schlagwort enthalten.",
+                        inline=False,
+                    )
+                    embed.add_field(
+                        name="Akzeptierte Schlagworte", value=kw_list, inline=False
+                    )
+                    embed.add_field(
+                        name="Beispiel",
+                        value="`[CW: Beschreibung des Inhalts]` oder bei NSFW-Inhalten z.B. den Namen der Kinks",
+                        inline=False,
+                    )
+                    embed.add_field(
+                        name="Dein Text",
+                        value=get_quoted_content(message) or "_Kein Text_",
+                        inline=False,
+                    )
+
                     try:
                         await message.author.send(embed=embed)
                     except discord.Forbidden:
                         pass
-                    
-                    logger.info(f"Deleted non-spoiler media from {message.author} in {channel_name}")
+
+                    logger.info(
+                        f"Deleted non-spoiler media from {message.author} in {channel_name}"
+                    )
                     return
                 except Exception as e:
                     logger.error(f"Error in spoiler moderation: {e}")
@@ -196,16 +263,26 @@ class MediaCog(commands.Cog):
                             f"Bitte bearbeite deinen Beitrag innerhalb der nächsten 15 Minuten und füge eines der akzeptierten Schlagworte sowie eine kurze Beschreibung hinzu.\n"
                             f"Ansonsten muss der Beitrag leider automatisch gelöscht werden."
                         ),
-                        color=discord.Color.orange()
+                        color=discord.Color.orange(),
                     )
-                    embed.add_field(name="Akzeptierte Schlagworte", value=kw_list_full, inline=False)
-                    embed.add_field(name="Empfohlene Darstellung", value="`[CW: Kurze Inhaltsbeschreibung]`\n`[TW: Trigger-Thema]`\n`CW: Beschreibung`", inline=False)
-                    embed.add_field(name="Frist", value=f"Bis {timestamp}", inline=False)
-                    
+                    embed.add_field(
+                        name="Akzeptierte Schlagworte", value=kw_list_full, inline=False
+                    )
+                    embed.add_field(
+                        name="Empfohlene Darstellung",
+                        value="`[CW: Kurze Inhaltsbeschreibung]`\n`[TW: Trigger-Thema]`\n`CW: Beschreibung`",
+                        inline=False,
+                    )
+                    embed.add_field(
+                        name="Frist", value=f"Bis {timestamp}", inline=False
+                    )
+
                     try:
                         await message.author.send(embed=embed)
                     except discord.Forbidden:
-                        logger.warning(f"Could not send grace period DM to {message.author} (DMs closed)")
+                        logger.warning(
+                            f"Could not send grace period DM to {message.author} (DMs closed)"
+                        )
 
                     # Save to DB for persistence (warning_msg_id is now 0)
                     await self.db.add_grace_period(
@@ -214,7 +291,7 @@ class MediaCog(commands.Cog):
                         message.id,
                         message.author.id,
                         0,
-                        target_time
+                        target_time,
                     )
                 except Exception as e:
                     logger.error(f"Error in CW grace period initialization: {e}")
@@ -306,7 +383,10 @@ class MediaCog(commands.Cog):
 
         # Validate that at least one value is being changed
         if auto_thread is None and thread_only is None and spoiler_only is None:
-            await interaction.followup.send("Bitte gib mindestens einen Parameter an, den du ändern möchtest.", ephemeral=True)
+            await interaction.followup.send(
+                "Bitte gib mindestens einen Parameter an, den du ändern möchtest.",
+                ephemeral=True,
+            )
             return
 
         await self.db.set_target_setting(
@@ -343,12 +423,12 @@ class MediaCog(commands.Cog):
     ):
         await interaction.response.defer(ephemeral=True)
         target_channel = channel or interaction.channel
-        
+
         await self.db.remove_target_setting(target_channel.id)
-        
+
         await interaction.followup.send(
             f"Alle Einstellungen für {target_channel.mention} wurden gelöscht. Der Kanal ist nun wieder 'normal'.",
-            ephemeral=True
+            ephemeral=True,
         )
 
 
