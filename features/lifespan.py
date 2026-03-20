@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ def should_archive(last_message_at, lifespan_days):
         return False  # Should not happen, but safe check
 
     # last_message_at should be aware datetime
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     delta = now - last_message_at
 
     return delta.days >= lifespan_days

@@ -1,10 +1,12 @@
-import os
 import asyncio
+import logging
+import os
+
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+
 from database.db_manager import DBManager
-import logging
 
 # Basic logging setup (following Limithamster pattern)
 logging.basicConfig(level=logging.INFO)
@@ -21,7 +23,13 @@ class ThreadHamster(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.members = True
-        super().__init__(command_prefix="!", intents=intents)
+        super().__init__(
+            command_prefix=commands.when_mentioned,
+            intents=intents,
+            help_command=None,
+            status=discord.Status.invisible,
+        )
+
         self.db = DBManager()
         self.batch_processor = None
 
@@ -50,7 +58,9 @@ class ThreadHamster(commands.Bot):
                 logger.error(f"Failed to load extension {cog}: {e}")
 
     async def on_ready(self):
+        await self.change_presence(status=discord.Status.invisible)
         logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
+        logger.info("Bot status set to invisible.")
         logger.info("------")
 
 
