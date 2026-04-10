@@ -14,8 +14,8 @@ class AdminCog(commands.Cog):
     @app_commands.command(
         name="sync",
         description="Synchronisiert die Slash-Commands manuell mit der Discord-API.",
-        default_permissions=discord.Permissions(administrator=True),
     )
+    @app_commands.default_permissions(administrator=True)
     @app_commands.checks.has_permissions(administrator=True)
     async def sync_slash(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)

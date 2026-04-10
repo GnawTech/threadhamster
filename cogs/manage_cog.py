@@ -27,13 +27,13 @@ class ManageCog(commands.Cog):
     @app_commands.command(
         name="manage",
         description="Zentrales Management-System für Kanäle und Server.",
-        default_permissions=discord.Permissions(administrator=True),
     )
     @app_commands.describe(
         aktion="Was möchtest du tun? (Setup, Status, Archiv, Reset, Guild)",
         target="ID oder Name des Kanals (Optional: Standard = aktuell)",
         scope="Bereich: Channel (Standard) oder Guild (Global)",
     )
+    @app_commands.default_permissions(administrator=True)
     @app_commands.checks.has_permissions(administrator=True)
     async def manage_router(
         self,
