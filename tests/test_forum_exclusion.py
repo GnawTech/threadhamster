@@ -1,10 +1,11 @@
-import pytest
-import discord
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timedelta, UTC
 
-from features.batch import BatchProcessor
+import discord
+import pytest
+
 from cogs.lifespan_cog import LifespanCog
+from features.batch import BatchProcessor
 
 
 @pytest.fixture
@@ -102,7 +103,6 @@ async def test_batch_processor_retro_archive_excludes_forum(
         patch("features.lifespan.resolve_lifespan", AsyncMock(return_value=5)),
         patch("cogs.lifespan_cog.resolve_lifespan", AsyncMock(return_value=5)),
     ):
-
         task = {
             "id": 1,
             "type": "RETRO_ARCHIVE",
@@ -115,12 +115,12 @@ async def test_batch_processor_retro_archive_excludes_forum(
 
         await processor._handle_task(task)
 
-        assert (
-            thread_text.edit.called
-        ), "Thread in text channel should have been archived"
-        assert (
-            not thread_forum.edit.called
-        ), "Thread in forum channel should NOT have been archived"
+        assert thread_text.edit.called, (
+            "Thread in text channel should have been archived"
+        )
+        assert not thread_forum.edit.called, (
+            "Thread in forum channel should NOT have been archived"
+        )
 
 
 @pytest.mark.asyncio

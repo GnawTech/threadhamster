@@ -277,5 +277,7 @@ class DBManager:
 
     async def remove_grace_period(self, entry_id: int):
         async with aiosqlite.connect(self.db_path) as db:
-            await db.execute("DELETE FROM media_grace_periods WHERE id = ?", (entry_id,))
+            await db.execute(
+                "DELETE FROM media_grace_periods WHERE id = ?", (entry_id,)
+            )
             await db.commit()

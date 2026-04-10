@@ -38,10 +38,12 @@ class BatchProcessor:
     async def _process_loop(self):
         logger.info("Batch processor loop started. Waiting for bot to be ready...")
         await self.bot.wait_until_ready()
-        
+
         # Give it a few seconds for the cache to actually populate guilds
         await asyncio.sleep(5)
-        logger.info(f"Bot is ready. Guilds found: {len(self.bot.guilds)}. Processing queue...")
+        logger.info(
+            f"Bot is ready. Guilds found: {len(self.bot.guilds)}. Processing queue..."
+        )
 
         while self.is_running:
             task = await self.queue.get()
@@ -70,7 +72,9 @@ class BatchProcessor:
             try:
                 guild = await self.bot.fetch_guild(guild_id)
             except:
-                logger.warning(f"Task {task.get('id')}: Guild {guild_id} not found after fetch.")
+                logger.warning(
+                    f"Task {task.get('id')}: Guild {guild_id} not found after fetch."
+                )
                 return
 
         if task_type == "RETRO_ARCHIVE":
@@ -110,7 +114,7 @@ class BatchProcessor:
             for thread in threads_to_check:
                 if thread.archived:
                     continue
-                
+
                 # Exclusion rule: Forums are NEVER auto-archived by this bot
                 if isinstance(thread.parent, discord.ForumChannel):
                     continue
@@ -131,19 +135,17 @@ class BatchProcessor:
                         last_active = None
                         async for msg in thread.history(limit=1):
                             last_active = msg.created_at
-                        
+
                         # If no messages, use thread creation time
                         if not last_active:
                             last_active = thread.created_at
-                            
+
                         if last_active and should_archive(last_active, current_l):
-                            await thread.edit(
-                                archived=True, reason="Retro-Lifespan"
-                            )
+                            await thread.edit(archived=True, reason="Retro-Lifespan")
                             logger.info(f"Retro-Archived thread {thread.id}")
                             await asyncio.sleep(0.5)  # Rate limit only after action
                         else:
-                            await asyncio.sleep(0.05) # Tiny sleep to yield
+                            await asyncio.sleep(0.05)  # Tiny sleep to yield
                 except Exception as e:
                     logger.error(f"Retro error in thread {thread.id}: {e}")
 

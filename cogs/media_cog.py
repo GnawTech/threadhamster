@@ -272,7 +272,6 @@ class MediaCog(commands.Cog):
             except Exception as e:
                 logger.error(f"Error in CW grace period initialization: {e}")
 
-
         # 3. Auto-Thread (Only if not already in a thread)
         if auto_thread and not is_thread:
             # We only auto-thread media posts in thread_only channels,

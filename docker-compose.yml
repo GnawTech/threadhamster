@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  bot:
+    container_name: threadhamster-bot
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    volumes:
+      - ./data:/app/data
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - PYTHONUNBUFFERED=1
+      - TZ=Europe/Berlin
+    networks:
+      - gnawtech-network
+
+networks:
+  gnawtech-network:
+    external: true
