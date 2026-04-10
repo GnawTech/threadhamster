@@ -9,7 +9,7 @@ import pytest
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from utils.media_utils import is_media, is_spoiler, has_cw_keyword
+from utils.media_utils import has_cw_keyword, is_media, is_spoiler
 
 # Mock the database before importing MediaCog
 with patch("database.db_manager.DBManager"):
@@ -44,15 +44,42 @@ def test_utils_is_spoiler():
     msg.content = "||spoiler||"
     assert is_spoiler(msg) is True
 
+    # Single attachment
     att = MagicMock()
     att.is_spoiler.return_value = True
     msg.attachments = [att]
+    msg.content = ""
     assert is_spoiler(msg) is True
 
+    # Multiple attachments, all spoilers
     att2 = MagicMock()
-    att2.is_spoiler.return_value = False
+    att2.is_spoiler.return_value = True
     msg.attachments = [att, att2]
+    assert is_spoiler(msg) is True
+
+    # Multiple attachments, one non-spoiler
+    att3 = MagicMock()
+    att3.is_spoiler.return_value = False
+    msg.attachments = [att, att2, att3]
     assert is_spoiler(msg) is False
+
+    # Mixed media: spoiler attachment + plaintext link (FAIL)
+    msg.attachments = [att]
+    msg.content = "Check this link: http://example.com"
+    assert is_spoiler(msg) is False
+
+    # Mixed media: spoiler attachment + spoiled link (PASS)
+    msg.content = "Check this spoiler: ||http://example.com||"
+    assert is_spoiler(msg) is True
+
+    # Only plaintext link (FAIL)
+    msg.attachments = []
+    msg.content = "http://example.com"
+    assert is_spoiler(msg) is False
+
+    # Only spoiled link (PASS)
+    msg.content = "||http://example.com||"
+    assert is_spoiler(msg) is True
 
 
 def test_utils_has_cw_keyword():
@@ -69,7 +96,8 @@ def test_utils_has_cw_keyword():
 class TestMediaEnforcement(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.bot = MagicMock()
-        self.cog = MediaCog(self.bot)
+        with patch("discord.ext.tasks.Loop.start"):
+            self.cog = MediaCog(self.bot)
         self.cog.db = AsyncMock()
 
     async def test_on_message_in_thread_allowed(self):

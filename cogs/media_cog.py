@@ -176,26 +176,46 @@ class MediaCog(commands.Cog):
 
         has_media = is_media(message)
 
-        # 1. Moderation (thread_only)
-        # ONLY enforce thread_only if we are NOT in a thread (unless it's a forum starter)
-        should_moderate_thread_only = not is_thread or (
-            is_forum and message.id == message.channel.id
-        )
+        from features.media import should_moderate_message
 
-        if should_moderate_thread_only and thread_only and not has_media:
+        # Moderation Check
+        should_delete, reason = should_moderate_message(message, res)
+
+        if should_delete:
             try:
-                # Delete and notify
                 channel_name = message.channel.name
                 await message.delete()
 
-                embed = discord.Embed(
-                    title="Beitrag gelöscht",
-                    description=(
+                if reason == "THREAD_ONLY":
+                    description = (
                         f"Dein Post im Kanal **#{channel_name}** wurde gelöscht, "
                         f"da dies ein Thread-Only Medien-Kanal ist. Bitte antworte in den entsprechenden Threads."
-                    ),
+                    )
+                elif reason == "SPOILER_ONLY":
+                    description = (
+                        f"Dein Beitrag im Kanal **#{channel_name}** wurde gelöscht, "
+                        f"da in diesem Kanal alle Bilder/Medien als **Spoiler** markiert sein müssen."
+                    )
+                else:
+                    description = f"Dein Beitrag im Kanal **#{channel_name}** wurde aufgrund einer Moderationsregel gelöscht."
+
+                embed = discord.Embed(
+                    title="Beitrag gelöscht",
+                    description=description,
                     color=discord.Color.red(),
                 )
+
+                if reason == "SPOILER_ONLY":
+                    kw_list = ", ".join([f"`{kw}`" for kw in ACCEPTED_KEYWORDS])
+                    embed.add_field(
+                        name="Anforderung",
+                        value="Alle Medien müssen als Spoiler markiert sein und ein CW-Schlagwort enthalten.",
+                        inline=False,
+                    )
+                    embed.add_field(
+                        name="Akzeptierte Schlagworte", value=kw_list, inline=False
+                    )
+
                 embed.add_field(
                     name="Dein Text",
                     value=get_quoted_content(message) or "_Kein Text_",
@@ -207,118 +227,51 @@ class MediaCog(commands.Cog):
                 except discord.Forbidden:
                     pass
 
-                logger.info(
-                    f"Deleted non-media post from {message.author} in {channel_name}"
-                )
-                return  # Don't process further
+                logger.info(f"Moderated message from {message.author} in {channel_name} (Reason: {reason})")
+                return
             except Exception as e:
-                logger.error(f"Error in media moderation (thread_only): {e}")
+                logger.error(f"Error in media moderation ({reason}): {e}")
 
-        # 2. Moderation (spoiler_only)
-        if spoiler_only and has_media:
-            # Special case for Forum starter messages: Deleting them deletes the whole thread.
-            # We allow them if they are in a thread AND it's a ForumChannel parent.
-            # Actually, standard spoiler_only should still apply, but maybe be more lenient?
-            # For now, we keep it as is, but we could add a check if it's a starter message.
+        elif reason == "CW_MISSING":
+            # CW Grace Period Trigger
+            try:
+                grace_time = 15
+                target_time = datetime.now() + timedelta(minutes=grace_time)
+                timestamp = f"<t:{int(target_time.timestamp())}:t>"
 
-            if not is_spoiler(message):
+                kw_list_full = ", ".join([f"`{kw}`" for kw in ACCEPTED_KEYWORDS])
+                embed = discord.Embed(
+                    title="Inhaltswarnung (CW) fehlt",
+                    description=(
+                        f"Deinem Beitrag im Kanal **#{message.channel.name}** fehlt eine Inhaltswarnung (CW).\n\n"
+                        f"Bitte bearbeite deinen Beitrag innerhalb der nächsten 15 Minuten und füge eines der akzeptierten Schlagworte sowie eine kurze Beschreibung hinzu.\n"
+                        f"Ansonsten muss der Beitrag leider automatisch gelöscht werden."
+                    ),
+                    color=discord.Color.orange(),
+                )
+                embed.add_field(
+                    name="Akzeptierte Schlagworte", value=kw_list_full, inline=False
+                )
+                embed.add_field(
+                    name="Frist", value=f"Bis {timestamp}", inline=False
+                )
+
                 try:
-                    channel_name = message.channel.name
-                    await message.delete()
+                    await message.author.send(embed=embed)
+                except discord.Forbidden:
+                    pass
 
-                    kw_list = ", ".join([f"`{kw}`" for kw in ACCEPTED_KEYWORDS])
-                    embed = discord.Embed(
-                        title="Beitrag gelöscht",
-                        description=(
-                            f"Dein Beitrag im Kanal **#{channel_name}** wurde gelöscht, "
-                            f"da in diesem Kanal alle Bilder/Medien als **Spoiler** markiert sein müssen."
-                        ),
-                        color=discord.Color.red(),
-                    )
-                    embed.add_field(
-                        name="Anforderung",
-                        value="Alle Medien müssen als Spoiler markiert sein und ein CW-Schlagwort enthalten.",
-                        inline=False,
-                    )
-                    embed.add_field(
-                        name="Akzeptierte Schlagworte", value=kw_list, inline=False
-                    )
-                    embed.add_field(
-                        name="Beispiel",
-                        value="`[CW: Beschreibung des Inhalts]` oder bei NSFW-Inhalten z.B. den Namen der Kinks",
-                        inline=False,
-                    )
-                    embed.add_field(
-                        name="Dein Text",
-                        value=get_quoted_content(message) or "_Kein Text_",
-                        inline=False,
-                    )
+                await self.db.add_grace_period(
+                    message.guild.id,
+                    message.channel.id,
+                    message.id,
+                    message.author.id,
+                    0,
+                    target_time,
+                )
+            except Exception as e:
+                logger.error(f"Error in CW grace period initialization: {e}")
 
-                    try:
-                        await message.author.send(embed=embed)
-                    except discord.Forbidden:
-                        pass
-
-                    logger.info(
-                        f"Deleted non-spoiler media from {message.author} in {channel_name}"
-                    )
-                    return
-                except Exception as e:
-                    logger.error(f"Error in spoiler moderation: {e}")
-
-            elif not has_cw_keyword(message.content):
-                try:
-                    # Give 15 minutes grace period
-                    grace_time = 15
-                    target_time = datetime.now() + timedelta(minutes=grace_time)
-                    timestamp = f"<t:{int(target_time.timestamp())}:t>"
-
-                    # we NO LONGER send a public warning in the channel.
-                    # warning_msg = (...)
-                    # warning_msg_obj = await message.channel.send(warning_msg)
-
-                    # Also send a DM to the user as Embed
-                    kw_list_full = ", ".join([f"`{kw}`" for kw in ACCEPTED_KEYWORDS])
-                    embed = discord.Embed(
-                        title="Inhaltswarnung (CW) fehlt",
-                        description=(
-                            f"Deinem Beitrag im Kanal **#{message.channel.name}** fehlt eine Inhaltswarnung (CW).\n\n"
-                            f"Bitte bearbeite deinen Beitrag innerhalb der nächsten 15 Minuten und füge eines der akzeptierten Schlagworte sowie eine kurze Beschreibung hinzu.\n"
-                            f"Ansonsten muss der Beitrag leider automatisch gelöscht werden."
-                        ),
-                        color=discord.Color.orange(),
-                    )
-                    embed.add_field(
-                        name="Akzeptierte Schlagworte", value=kw_list_full, inline=False
-                    )
-                    embed.add_field(
-                        name="Empfohlene Darstellung",
-                        value="`[CW: Kurze Inhaltsbeschreibung]`\n`[TW: Trigger-Thema]`\n`CW: Beschreibung`",
-                        inline=False,
-                    )
-                    embed.add_field(
-                        name="Frist", value=f"Bis {timestamp}", inline=False
-                    )
-
-                    try:
-                        await message.author.send(embed=embed)
-                    except discord.Forbidden:
-                        logger.warning(
-                            f"Could not send grace period DM to {message.author} (DMs closed)"
-                        )
-
-                    # Save to DB for persistence (warning_msg_id is now 0)
-                    guild_id = message.guild.id
-                    await self.db.add_grace_period(
-                        guild_id,
-                        message.channel.id,
-                        message.id,
-                        message.author.id,
-                        0,
-                        target_time,
-                    )
-                except Exception as e:
-                    logger.error(f"Error in CW grace period initialization: {e}")
 
         # 3. Auto-Thread (Only if not already in a thread)
         if auto_thread and not is_thread:
