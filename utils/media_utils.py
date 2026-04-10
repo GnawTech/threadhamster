@@ -32,13 +32,29 @@ def is_media(message):
 def is_spoiler(message):
     """
     Checks if all media in the message is marked as spoiler.
+    For a message to be a valid 'spoiler', ALL attachments must be spoilers
+    AND any links must be wrapped in spoiler tags ||...||.
     """
-    # If no attachments, check if text has spoiler tags
-    if not message.attachments:
+    # 1. Check Attachments
+    if message.attachments:
+        if not all(att.is_spoiler() for att in message.attachments):
+            return False
+
+    # 2. Check Links
+    has_link = "http://" in message.content or "https://" in message.content
+    if has_link:
+        # A bit simplistic but usually links are within ||...|| for spoilers
+        # Discord doesn't have a specific is_spoiler property for links in the message object,
+        # it just defaults to checking if the link is within || tags.
+        if "||" not in message.content:
+            return False
+
+    # 3. If no attachments and no links, but we are here (is_media was True),
+    # it must be a text-only spoiler tag.
+    if not message.attachments and not has_link:
         return "||" in message.content
 
-    # If attachments exist, ALL must be spoilers (Discord logic) or the message itself is a spoiler
-    return all(att.is_spoiler() for att in message.attachments)
+    return True
 
 
 ACCEPTED_KEYWORDS = [

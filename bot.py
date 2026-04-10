@@ -49,7 +49,12 @@ class ThreadHamster(commands.Bot):
         await self.batch_processor.start()
 
         # Load Extensions
-        cogs = ["cogs.lifespan_cog", "cogs.media_cog", "cogs.admin_cog"]
+        cogs = [
+            "cogs.lifespan_cog",
+            "cogs.media_cog",
+            "cogs.admin_cog",
+            "cogs.manage_cog",
+        ]
         for cog in cogs:
             try:
                 await self.load_extension(cog)

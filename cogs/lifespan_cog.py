@@ -99,7 +99,9 @@ class LifespanCog(commands.Cog):
                 # because it's too expensive hourly. on_thread_update handles keepalive.
                 threads = await guild.active_threads()
             except Exception as e:
-                logger.error(f"Failed to fetch active threads for guild {guild.id}: {e}")
+                logger.error(
+                    f"Failed to fetch active threads for guild {guild.id}: {e}"
+                )
                 continue
 
             for thread in threads:
@@ -203,124 +205,8 @@ class LifespanCog(commands.Cog):
             )
             logger.info(f"Thread {after.id} is active again. Resetting manual flag.")
 
-    @app_commands.command(
-        name="lifespan",
-        description="Setzt die Lebensdauer für einen Bereich (Tage).",
-    )
-    @app_commands.describe(
-        days="Tage seit dem letzten Beitrag (0=Unendlich)",
-        target="Optional: Kanal/Thread/Kategorie (Standard: aktuell)",
-        retro="Rückwirkend anwenden (Vorsicht)",
-    )
-    @app_commands.checks.has_permissions(administrator=True)
-    async def set_lifespan(
-        self,
-        interaction: discord.Interaction,
-        days: int,
-        target: discord.abc.GuildChannel = None,
-        retro: bool = False,
-    ):
-        await interaction.response.defer(ephemeral=True)
-        target = target or interaction.channel
-        guild_id = interaction.guild_id
-
-        target_type = "CHANNEL"
-        if isinstance(target, discord.Thread):
-            target_type = "THREAD"
-        elif isinstance(target, discord.CategoryChannel):
-            target_type = "CATEGORY"
-
-        await self.db.set_target_setting(
-            guild_id, target.id, target_type, lifespan=days
-        )
-
-        msg = f"Lebensdauer für {target.mention} auf {days} Tage gesetzt."
-        if retro:
-            msg += "\n🚀 Retro-Archivierung wurde eingereiht."
-            await self.bot.batch_processor.add_task(
-                "RETRO_ARCHIVE", guild_id, {"target_id": target.id, "lifespan": days}
-            )
-
-        await interaction.followup.send(msg, ephemeral=True)
-
-    @app_commands.command(
-        name="setup_guild",
-        description="Konfiguriert globale Bot-Einstellungen.",
-    )
-    @app_commands.describe(
-        global_lifespan="Standard-Lebensdauer (Tage)",
-        monitor_mode="Einstellungs-Modus (CUSTOM_ONLY / GLOBAL_CUSTOM)",
-        retro="Rückwirkend anwenden (Vorsicht)",
-    )
-    @app_commands.checks.has_permissions(administrator=True)
-    async def setup_guild(
-        self,
-        interaction: discord.Interaction,
-        global_lifespan: int = 0,
-        monitor_mode: str = "CUSTOM_ONLY",
-        retro: bool = False,
-    ):
-        await interaction.response.defer(ephemeral=True)
-        if monitor_mode not in ["CUSTOM_ONLY", "GLOBAL_CUSTOM"]:
-            await interaction.followup.send("Ungültiger Modus.", ephemeral=True)
-            return
-
-        guild_id = interaction.guild_id
-        await self.db.set_guild_setting(guild_id, global_lifespan, monitor_mode)
-
-        msg = f"Server-Profil aktualisiert: Modus `{monitor_mode}`."
-        if retro:
-            msg += "\n🚀 Globaler Retro-Scan wurde eingereiht."
-            await self.bot.batch_processor.add_task(
-                "RETRO_ARCHIVE",
-                guild_id,
-                {"target_id": None, "lifespan": global_lifespan},
-            )
-
-        await interaction.followup.send(msg, ephemeral=True)
-
-    @app_commands.command(
-        name="archives",
-        description="Listet archivierte Threads auf (Paginierung).",
-    )
-    @app_commands.describe(
-        channel="Optional: Kanal, dessen Archiv durchsucht werden soll.",
-    )
-    @app_commands.checks.has_permissions(administrator=True)
-    async def archives(
-        self,
-        interaction: discord.Interaction,
-        channel: discord.TextChannel | None = None,
-    ):
-        await interaction.response.defer(ephemeral=True)
-        target = channel or interaction.channel
-
-        if not isinstance(target, (discord.TextChannel, discord.ForumChannel)):
-            await interaction.followup.send(
-                "Nur für Textkanäle oder Foren verfügbar.", ephemeral=True
-            )
-            return
-
-        try:
-            # Fetch archived threads
-            archived = await target.archived_threads(limit=100).flatten()
-            # Sort by archive timestamp decending if possible, else by ID
-            archived.sort(key=lambda x: x.archive_timestamp or x.id, reverse=True)
-
-            if not archived:
-                await interaction.followup.send(
-                    f"Keine archivierten Threads in {target.mention} gefunden.",
-                    ephemeral=True,
-                )
-                return
-
-            view = ArchiveView(archived, target.name, interaction.user.id)
-            await interaction.followup.send(
-                embed=view.create_embed(), view=view, ephemeral=True
-            )
-        except Exception as e:
-            logger.error(f"Error listing archives: {e}")
-            await interaction.followup.send(f"Fehler: {e}", ephemeral=True)
+    # Note: Management commands (lifespan, setup_guild, archives)
+    # have been moved to ManageCog as part of the Unified Command Architecture.
 
 
 async def setup(bot):
