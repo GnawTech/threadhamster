@@ -27,6 +27,7 @@ class ManageCog(commands.Cog):
     @app_commands.command(
         name="manage",
         description="Zentrales Management-System für Kanäle und Server.",
+        default_permissions=discord.Permissions(administrator=True),
     )
     @app_commands.describe(
         aktion="Was möchtest du tun? (Setup, Status, Archiv, Reset, Guild)",
