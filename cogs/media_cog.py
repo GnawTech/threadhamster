@@ -1,17 +1,19 @@
-import discord
-from discord.ext import commands, tasks
+import asyncio
 import logging
+from datetime import datetime, timedelta
+
+import discord
+from discord import app_commands
+from discord.ext import commands, tasks
+
 from database.db_manager import DBManager
 from utils.media_utils import (
-    is_media,
-    get_quoted_content,
-    is_spoiler,
-    has_cw_keyword,
     ACCEPTED_KEYWORDS,
+    get_quoted_content,
+    has_cw_keyword,
+    is_media,
+    is_spoiler,
 )
-from discord import app_commands
-import asyncio
-from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -341,117 +343,8 @@ class MediaCog(commands.Cog):
                 except Exception as e:
                     logger.error(f"Error creating auto-thread: {e}")
 
-    @app_commands.command(
-        name="setup_channel",
-        description="Konfiguriert Medien-Moderation und Auto-Threads.",
-    )
-    @app_commands.describe(
-        channel="Der Kanal, der konfiguriert werden soll (Standard: aktuell)",
-        auto_thread="Erstellt automatisch einen Thread für jeden Medien-Post",
-        thread_only="Erlaubt nur Medien-Posts (Text ohne Medien wird gelöscht)",
-        spoiler_only="Erfordert, dass alle Medien als Spoiler markiert sind + CW Schlagwort",
-    )
-    @app_commands.checks.has_permissions(administrator=True)
-    async def setup_channel(
-        self,
-        interaction: discord.Interaction,
-        channel: discord.TextChannel = None,
-        auto_thread: bool = False,
-        thread_only: bool = False,
-        spoiler_only: bool = False,
-    ):
-        await interaction.response.defer(ephemeral=True)
-        guild_id = interaction.guild_id
-        target_channel = channel or interaction.channel
-
-        await self.db.set_target_setting(
-            guild_id,
-            target_channel.id,
-            "CHANNEL",
-            auto_thread=auto_thread,
-            thread_only=thread_only,
-            spoiler_only=spoiler_only,
-        )
-
-        msg = f"Medien-Einstellungen für {target_channel.mention} konfiguriert:\n"
-        msg += f"- Auto-Thread: {'An' if auto_thread else 'Aus'}\n"
-        msg += f"- Thread-Only: {'An' if thread_only else 'Aus'}\n"
-        msg += f"- Spoiler-Only (+CW): {'An' if spoiler_only else 'Aus'}\n"
-
-        await interaction.followup.send(msg, ephemeral=True)
-
-    @app_commands.command(
-        name="edit_channel",
-        description="Ändert einzelne Medien-Einstellungen eines Kanals.",
-    )
-    @app_commands.describe(
-        channel="Der Kanal, der bearbeitet werden soll (Standard: aktuell)",
-        auto_thread="Erstellt automatisch einen Thread für jeden Medien-Post",
-        thread_only="Erlaubt nur Medien-Posts (Text ohne Medien wird gelöscht)",
-        spoiler_only="Erfordert, dass alle Medien als Spoiler markiert sind + CW Schlagwort",
-    )
-    @app_commands.checks.has_permissions(administrator=True)
-    async def edit_channel(
-        self,
-        interaction: discord.Interaction,
-        channel: discord.TextChannel = None,
-        auto_thread: bool = None,
-        thread_only: bool = None,
-        spoiler_only: bool = None,
-    ):
-        await interaction.response.defer(ephemeral=True)
-        guild_id = interaction.guild_id
-        target_channel = channel or interaction.channel
-
-        # Validate that at least one value is being changed
-        if auto_thread is None and thread_only is None and spoiler_only is None:
-            await interaction.followup.send(
-                "Bitte gib mindestens einen Parameter an, den du ändern möchtest.",
-                ephemeral=True,
-            )
-            return
-
-        await self.db.set_target_setting(
-            guild_id,
-            target_channel.id,
-            "CHANNEL",
-            auto_thread=auto_thread,
-            thread_only=thread_only,
-            spoiler_only=spoiler_only,
-        )
-
-        msg = f"Medien-Einstellungen für {target_channel.mention} wurden angepasst:\n"
-        if auto_thread is not None:
-            msg += f"- Auto-Thread: {'An' if auto_thread else 'Aus'}\n"
-        if thread_only is not None:
-            msg += f"- Thread-Only: {'An' if thread_only else 'Aus'}\n"
-        if spoiler_only is not None:
-            msg += f"- Spoiler-Only (+CW): {'An' if spoiler_only else 'Aus'}\n"
-
-        await interaction.followup.send(msg, ephemeral=True)
-
-    @app_commands.command(
-        name="reset_channel",
-        description="Entfernt alle Bot-Einstellungen für einen Kanal (Lifespan + Medien).",
-    )
-    @app_commands.describe(
-        channel="Der Kanal, der zurückgesetzt werden soll (Standard: aktuell)",
-    )
-    @app_commands.checks.has_permissions(administrator=True)
-    async def reset_channel(
-        self,
-        interaction: discord.Interaction,
-        channel: discord.TextChannel = None,
-    ):
-        await interaction.response.defer(ephemeral=True)
-        target_channel = channel or interaction.channel
-
-        await self.db.remove_target_setting(target_channel.id)
-
-        await interaction.followup.send(
-            f"Alle Einstellungen für {target_channel.mention} wurden gelöscht. Der Kanal ist nun wieder 'normal'.",
-            ephemeral=True,
-        )
+    # Note: Management commands (setup_channel, edit_channel, reset_channel)
+    # have been moved to ManageCog as part of the Unified Command Architecture.
 
 
 async def setup(bot):
