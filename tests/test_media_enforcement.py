@@ -209,8 +209,57 @@ class TestMediaEnforcement(unittest.IsolatedAsyncioTestCase):
 
         await self.cog.on_message(message)
 
-        # Verify reply WAS NOT deleted
+    async def test_on_message_system_message_ignored(self):
+        """System messages should be ignored by moderation."""
+        message = AsyncMock(spec=discord.Message)
+        message.author.bot = False
+        message.type = discord.MessageType.thread_created
+        
+        await self.cog.on_message(message)
+        self.cog.db.get_target_setting.assert_not_called()
+
+    async def test_on_message_spoiler_only_deleted(self):
+        """Media without spoiler in a spoiler_only channel should be deleted."""
+        self.cog.db.get_target_setting.return_value = (
+            1, "CHANNEL", 0, False, False, True, False
+        )
+        message = AsyncMock(spec=discord.Message)
+        message.author.bot = False
+        message.type = discord.MessageType.default
+        message.channel.name = "spoiler-gallery"
+        message.attachments = [MagicMock()]
+        message.attachments[0].is_spoiler.return_value = False
+        message.content = "No tags"
+
+        with patch("features.media.is_media", return_value=True), \
+             patch("features.media.is_spoiler", return_value=False):
+            await self.cog.on_message(message)
+
+        message.delete.assert_called_once()
+
+    async def test_on_message_cw_missing_grace_period(self):
+        """Media with spoiler but missing CW should trigger grace period."""
+        self.cog.db.get_target_setting.return_value = (
+            1, "CHANNEL", 0, False, False, True, False
+        )
+        message = AsyncMock(spec=discord.Message)
+        message.author.bot = False
+        message.author.id = 123
+        message.author.send = AsyncMock() # Ensure this is awaitable
+        message.guild.id = 456
+        message.type = discord.MessageType.default
+        message.channel.name = "spoiler-gallery"
+        message.content = "No CW here"
+
+        with patch("features.media.is_media", return_value=True), \
+             patch("features.media.is_spoiler", return_value=True), \
+             patch("features.media.has_cw_keyword", return_value=False):
+            await self.cog.on_message(message)
+
+        # Should NOT delete immediately
         message.delete.assert_not_called()
+        # Should add to grace period DB
+        self.cog.db.add_grace_period.assert_called_once()
 
 
 if __name__ == "__main__":

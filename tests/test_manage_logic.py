@@ -54,6 +54,21 @@ async def test_parse_context_thread():
 
 
 @pytest.mark.asyncio
+async def test_parse_context_category():
+    interaction = MagicMock(spec=discord.Interaction)
+    mock_category = MagicMock(spec=discord.CategoryChannel)
+    mock_category.id = 111
+    mock_category.name = "My Category"
+    mock_category.mention = "@My Category"
+
+    ctx = await parse_context(interaction, target=mock_category)
+
+    assert ctx["target_id"] == 111
+    assert ctx["target_type"] == "CATEGORY"
+    assert ctx["name"] == "My Category"
+
+
+@pytest.mark.asyncio
 async def test_update_settings():
     db = MagicMock()
     db.set_target_setting = AsyncMock()
@@ -76,6 +91,16 @@ async def test_update_settings():
 
 
 @pytest.mark.asyncio
+async def test_update_settings_error():
+    db = MagicMock()
+    db.set_target_setting = AsyncMock(side_effect=Exception("DB Error"))
+
+    success = await update_settings(db, 456, 123, "CHANNEL", lifespan=7)
+
+    assert success is False
+
+
+@pytest.mark.asyncio
 async def test_get_config_summary():
     db = MagicMock()
     # res: guild_id, target_type, lifespan, auto_thread, thread_only, spoiler_only, manually_archived
@@ -87,6 +112,15 @@ async def test_get_config_summary():
     assert summary["auto_thread"] is True
     assert summary["spoiler_only"] is True
     assert summary["thread_only"] is False
+
+
+@pytest.mark.asyncio
+async def test_get_config_summary_none():
+    db = MagicMock()
+    db.get_target_setting = AsyncMock(return_value=None)
+    
+    summary = await get_config_summary(db, 123)
+    assert summary is None
 
 
 @pytest.mark.asyncio
@@ -111,3 +145,50 @@ async def test_resolve_ambiguity_name():
     matches = await resolve_ambiguity(guild, "gen")
     assert len(matches) == 1
     assert matches[0].name == "general"
+
+
+@pytest.mark.asyncio
+async def test_resolve_ambiguity_no_match():
+    guild = MagicMock()
+    guild.channels = [MockChannel(1, "general")]
+    guild.threads = []
+    guild.get_channel.return_value = None
+    guild.get_thread.return_value = None
+
+    matches = await resolve_ambiguity(guild, "missing")
+    assert len(matches) == 0
+
+
+@pytest.mark.asyncio
+async def test_resolve_ambiguity_multiple_matches():
+    guild = MagicMock()
+    c1 = MockChannel(1, "media-1")
+    c2 = MockChannel(2, "media-2")
+    guild.channels = [c1, c2]
+    guild.threads = []
+
+    matches = await resolve_ambiguity(guild, "media")
+    assert len(matches) == 2
+
+
+@pytest.mark.asyncio
+async def test_resolve_ambiguity_thread_match():
+    guild = MagicMock()
+    guild.channels = []
+    t1 = MockThread(123, "my-thread")
+    guild.threads = [t1]
+    
+    matches = await resolve_ambiguity(guild, "thread")
+    assert len(matches) == 1
+    assert matches[0].id == 123
+
+
+@pytest.mark.asyncio
+async def test_resolve_ambiguity_no_name_match():
+    guild = MagicMock()
+    guild.channels = [MockChannel(1, "other")]
+    guild.threads = []
+    guild.get_channel.return_value = None
+    
+    matches = await resolve_ambiguity(guild, "missing")
+    assert len(matches) == 0
